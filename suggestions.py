@@ -1,0 +1,50 @@
+"""
+Suggestion chips shown to the admin as tappable buttons.
+
+Each entry maps a short button label -> a sample command the frontend sends
+to POST /agent when tapped. Keep this list in sync with the tools in agent.py;
+it's the user-facing menu of what the agent can do.
+
+`prompt` is what gets sent as the chat message. For write actions the agent
+will still ask for confirmation (per the system prompt), so these sample
+prompts are safe to fire directly.
+"""
+
+SUGGESTIONS = [
+    {
+        "id": "list_dates",
+        "label": "📋 Xem các ngày đánh",
+        "prompt": "Liệt kê tất cả các ngày đánh hiện có.",
+        "category": "read",
+    },
+    {
+        "id": "list_participants",
+        "label": "👥 Ai đã đăng ký?",
+        "prompt": "Ngày đánh gần nhất có những ai đăng ký tham gia?",
+        "category": "read",
+    },
+    {
+        "id": "create_date",
+        "label": "➕ Tạo ngày đánh",
+        "prompt": "Tạo một ngày đánh mới. Hỏi mình thông tin cần thiết nhé.",
+        "category": "write",
+    },
+    {
+        "id": "calculate",
+        "label": "💰 Tính tiền",
+        "prompt": "Mình muốn tính tiền cho một ngày đánh. Hỏi mình thông tin buổi đánh nhé.",
+        "category": "write",
+    },
+    {
+        "id": "show_result",
+        "label": "📢 Show kết quả",
+        "prompt": "Mình muốn cho user xem kết quả tiền của một ngày đánh.",
+        "category": "write",
+    },
+    {
+        "id": "edit_date",
+        "label": "✏️ Sửa ngày đánh",
+        "prompt": "Mình muốn sửa thông tin một ngày đánh.",
+        "category": "write",
+    },
+]
