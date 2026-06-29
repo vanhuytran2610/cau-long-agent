@@ -10,7 +10,7 @@ from typing import Optional
 import httpx
 
 EXPRESS_BASE_URL = os.environ.get("EXPRESS_BASE_URL", "http://localhost:3000")
-TIMEOUT = httpx.Timeout(60.0)  # calculate route calls Groq, can be slow
+TIMEOUT = httpx.Timeout(60.0)  # calculate route calls Grok, can be slow
 
 
 def _unwrap(resp: httpx.Response):

@@ -2,8 +2,8 @@
 LangGraph agent for badminton-day admin tasks.
 
 Tools wrap the existing Express routes (via ExpressClient). The model picks
-tools from their Vietnamese descriptions. Write actions (calculate / export /
-edit) are gated behind an in-chat confirmation enforced by the system prompt.
+tools from their descriptions. Write actions (calculate / export / edit) are
+gated behind an in-chat confirmation enforced by the system prompt.
 """
 
 import os
@@ -12,33 +12,9 @@ from langchain_openai import ChatOpenAI
 from langgraph.prebuilt import create_react_agent
 
 from express_client import ExpressClient
+from prompts import get_system_prompt
 
 XAI_MODEL = os.environ.get("XAI_MODEL", "grok-4.3")
-
-SYSTEM_PROMPT = """Bạn là trợ lý quản lý ngày đánh cầu lông cho admin.
-Bạn có các công cụ để: tạo ngày đánh, xem danh sách ngày/người tham gia,
-tính tiền, show kết quả cho user, và sửa ngày đánh.
-
-QUY TẮC BẮT BUỘC:
-1. Luôn trả lời bằng tiếng Việt, ngắn gọn, thân thiện.
-   TUYỆT ĐỐI không nhắc đến tên công cụ/hàm nội bộ (list_categories, create_vote_date, calculate, v.v.) trong câu trả lời.
-   Thay vào đó dùng ngôn ngữ tự nhiên, ví dụ: "Tôi sẽ xem danh sách ngày đánh cho bạn" thay vì "tôi sẽ gọi list_categories".
-2. Trước khi TÍNH TIỀN / SỬA / SHOW KẾT QUẢ cho một ngày: phải gọi
-   list_categories để tìm đúng category_id. Nếu có nhiều ngày tên giống nhau,
-   hỏi admin chọn cái nào — KHÔNG tự đoán.
-3. Khi gọi công cụ tính tiền: tham số payment_info PHẢI là bản copy nguyên văn từ tin nhắn admin, KHÔNG được tự sửa chữ, thêm bớt, hay diễn đạt lại — vì sửa chữ tiếng Việt gây lỗi font.
-4. Nếu thiếu thông tin để gọi công cụ:
-   - TẠO NGÀY (create_vote_date): tên ngày PHẢI do admin nói rõ ràng (ví dụ "15h-17h Thứ 7 ngày 27/6, sân Kim Châu").
-     Nếu admin chỉ nói "tạo ngày" hoặc "tạo ngày mới" mà CHƯA có tên/ngày giờ cụ thể:
-     HỎI LẠI ngay, ví dụ "Bạn muốn đặt tên ngày là gì?"
-     TUYỆT ĐỐI không tự đặt tên, không dùng câu hỏi hay mô tả làm tên ngày.
-   - Các thông tin khác (payment_info, category_id...): HỎI LẠI admin, TUYỆT ĐỐI không tự bịa.
-5. XÁC NHẬN trong chat trước khi thực hiện hành động ghi dữ liệu
-   (calculate, show_result, edit_date). Tóm tắt việc sắp làm và hỏi
-   "Bạn xác nhận chứ?" rồi chỉ gọi công cụ khi admin đồng ý ở lượt sau.
-6. Hành động chỉ ĐỌC (list_categories, list_participants) thì chạy thẳng,
-   không cần xác nhận.
-"""
 
 
 def build_tools(client: ExpressClient):
@@ -121,7 +97,7 @@ def build_tools(client: ExpressClient):
             calculate, show_result, edit_date]
 
 
-def build_agent(jwt: str, checkpointer):
+def build_agent(jwt: str, checkpointer, language: str = "vi"):
     """One agent per request, bound to the calling admin's JWT."""
     client = ExpressClient(jwt)
     llm = ChatOpenAI(
@@ -132,4 +108,4 @@ def build_agent(jwt: str, checkpointer):
     )
     tools = build_tools(client)
     return create_react_agent(llm, tools, checkpointer=checkpointer,
-                              prompt=SYSTEM_PROMPT)
+                              prompt=get_system_prompt(language))

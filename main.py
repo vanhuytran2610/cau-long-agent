@@ -28,7 +28,8 @@ from pydantic import BaseModel
 from langgraph.checkpoint.mongodb import MongoDBSaver
 
 from agent import build_agent
-from suggestions import SUGGESTIONS
+from prompts import get_welcome
+from suggestions import get_suggestions
 
 MONGODB_URI = os.environ["MONGODB_URI"]
 CHECKPOINT_DB = os.environ.get("CHECKPOINT_DB", "agent_memory")
@@ -86,6 +87,12 @@ def _extract_jwt(authorization: Optional[str]) -> str:
     return authorization.split(" ", 1)[1]
 
 
+def _extract_language(accept_language: Optional[str]) -> str:
+    if accept_language and accept_language.strip().startswith("en"):
+        return "en"
+    return "vi"
+
+
 def _decode_jwt_username(token: str) -> str:
     try:
         payload_b64 = token.split(".")[1]
@@ -102,18 +109,14 @@ async def health():
 
 
 @app.get("/welcome")
-async def welcome(authorization: Optional[str] = Header(default=None)):
-    """Trả về câu chào cá nhân hóa dựa trên JWT. Gọi khi mở chat lần đầu."""
+async def welcome(
+    authorization: Optional[str] = Header(default=None),
+    accept_language: Optional[str] = Header(default=None),
+):
     jwt = _extract_jwt(authorization)
     username = _decode_jwt_username(jwt)
-    return {
-        "reply": (
-            f"Chào {username}! 👋 Tôi là trợ lý quản lý ngày đánh cầu lông của bạn.\n"
-            f"Tôi có thể giúp bạn: tạo ngày đánh, xem danh sách người tham gia, "
-            f"tính tiền và show kết quả cho mọi người.\n"
-            f"Bạn muốn làm gì hôm nay?"
-        )
-    }
+    language = _extract_language(accept_language)
+    return {"reply": get_welcome(username, language)}
 
 
 @app.post("/agent/reset")
@@ -124,14 +127,19 @@ async def reset_thread(authorization: Optional[str] = Header(default=None)):
 
 
 @app.get("/suggestions")
-async def suggestions():
+async def suggestions(accept_language: Optional[str] = Header(default=None)):
     """Function hints rendered as tappable buttons in the admin UI.
     Tapping a button sends its `prompt` to POST /agent."""
-    return {"suggestions": SUGGESTIONS}
+    language = _extract_language(accept_language)
+    return {"suggestions": get_suggestions(language)}
 
 
 @app.post("/agent", response_model=ChatOut)
-async def agent_chat(req: ChatIn, authorization: Optional[str] = Header(default=None)):
+async def agent_chat(
+    req: ChatIn,
+    authorization: Optional[str] = Header(default=None),
+    accept_language: Optional[str] = Header(default=None),
+):
     jwt = _extract_jwt(authorization)
 
     # thread_id ties a conversation together. Default to the JWT so each admin
@@ -139,7 +147,8 @@ async def agent_chat(req: ChatIn, authorization: Optional[str] = Header(default=
     # parallel chats.
     thread_id = req.thread_id or jwt[-24:]
 
-    agent = build_agent(jwt, state["checkpointer"])
+    language = _extract_language(accept_language)
+    agent = build_agent(jwt, state["checkpointer"], language)
     config = {"configurable": {"thread_id": thread_id}}
 
     result = await agent.ainvoke({"messages": [("user", req.message)]}, config)
