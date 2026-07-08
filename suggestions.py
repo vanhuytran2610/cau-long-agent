@@ -36,18 +36,18 @@ _SUGGESTIONS = {
             "prompt": "Mình muốn tính tiền cho một ngày đánh. Hỏi mình thông tin buổi đánh nhé.",
             "category": "write",
         },
+        # {
+        #     "id": "show_result",
+        #     "label": "📢 Show kết quả",
+        #     "prompt": "Mình muốn cho user xem kết quả tiền của một ngày đánh.",
+        #     "category": "write",
+        # },
         {
-            "id": "show_result",
-            "label": "📢 Show kết quả",
-            "prompt": "Mình muốn cho user xem kết quả tiền của một ngày đánh.",
+            "id": "add_participant",
+            "label": "✏️ Thêm người chơi",
+            "prompt": "Mình muốn thêm một người tham gia vào một ngày đánh.",
             "category": "write",
-        },
-        {
-            "id": "edit_date",
-            "label": "✏️ Sửa ngày đánh",
-            "prompt": "Mình muốn sửa thông tin một ngày đánh.",
-            "category": "write",
-        },
+        }
     ],
     "en": [
         {
@@ -74,16 +74,16 @@ _SUGGESTIONS = {
             "prompt": "I want to calculate fees for a session. Ask me for the session details.",
             "category": "write",
         },
+        # {
+        #     "id": "show_result",
+        #     "label": "📢 Show results",
+        #     "prompt": "I want to show the fee results for a session to users.",
+        #     "category": "write",
+        # },
         {
-            "id": "show_result",
-            "label": "📢 Show results",
-            "prompt": "I want to show the fee results for a session to users.",
-            "category": "write",
-        },
-        {
-            "id": "edit_date",
-            "label": "✏️ Edit session",
-            "prompt": "I want to edit a session's details.",
+            "id": "add_participant",
+            "label": "✏️ Add participant",
+            "prompt": "I want to add a participant to a session.",
             "category": "write",
         },
     ],

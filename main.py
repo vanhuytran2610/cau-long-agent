@@ -73,12 +73,13 @@ app.add_middleware(
 
 class ChatIn(BaseModel):
     message: str
-    thread_id: Optional[str] = None  # default to admin identity if omitted
+    thread_id: Optional[str] = None
 
 
 class ChatOut(BaseModel):
-    reply: str
-    thread_id: str
+    status_code: int = 200
+    message: str = ""
+    data: Optional[dict] = None
 
 
 def _extract_jwt(authorization: Optional[str]) -> str:
@@ -105,7 +106,7 @@ def _decode_jwt_username(token: str) -> str:
 
 @app.get("/health")
 async def health():
-    return {"ok": True}
+    return ChatOut(data={"ok": True})
 
 
 @app.get("/welcome")
@@ -116,22 +117,21 @@ async def welcome(
     jwt = _extract_jwt(authorization)
     username = _decode_jwt_username(jwt)
     language = _extract_language(accept_language)
-    return {"reply": get_welcome(username, language)}
+    return ChatOut(data={"reply": get_welcome(username, language)})
 
 
 @app.post("/agent/reset")
 async def reset_thread(authorization: Optional[str] = Header(default=None)):
     """Tạo thread_id mới để bắt đầu cuộc hội thoại mới, xóa bỏ flow cũ."""
     _extract_jwt(authorization)
-    return {"thread_id": str(uuid.uuid4())}
+    return ChatOut(data={"thread_id": str(uuid.uuid4())})
 
 
 @app.get("/suggestions")
 async def suggestions(accept_language: Optional[str] = Header(default=None)):
-    """Function hints rendered as tappable buttons in the admin UI.
-    Tapping a button sends its `prompt` to POST /agent."""
+    """Function hints rendered as tappable buttons in the admin UI."""
     language = _extract_language(accept_language)
-    return {"suggestions": get_suggestions(language)}
+    return ChatOut(data={"suggestions": get_suggestions(language)})
 
 
 @app.post("/agent", response_model=ChatOut)
@@ -141,10 +141,6 @@ async def agent_chat(
     accept_language: Optional[str] = Header(default=None),
 ):
     jwt = _extract_jwt(authorization)
-
-    # thread_id ties a conversation together. Default to the JWT so each admin
-    # token gets its own persistent history; pass an explicit one for multiple
-    # parallel chats.
     thread_id = req.thread_id or jwt[-24:]
 
     language = _extract_language(accept_language)
@@ -153,4 +149,4 @@ async def agent_chat(
 
     result = await agent.ainvoke({"messages": [("user", req.message)]}, config)
     reply = result["messages"][-1].content
-    return ChatOut(reply=reply, thread_id=thread_id)
+    return ChatOut(data={"reply": reply, "thread_id": thread_id})
