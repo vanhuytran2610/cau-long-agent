@@ -1,17 +1,18 @@
 """
-FastAPI agent service (hướng 2).
+FastAPI agent service.
 
-  React admin  --(lệnh + JWT)-->  POST /agent  -->  LangGraph agent
-                                                       |
-                                            tools = httpx -> Express routes
-                                                       |
-                                              Express + MongoDB (giữ nguyên)
+  React admin  --(lệnh + accessToken)-->  POST /agent  -->  LangGraph agent
+                                                               |
+                                                    tools = httpx -> Express routes
+                                                               |
+                                                      Express + MongoDB (giữ nguyên)
 
 Conversation history is persisted to the SAME MongoDB via LangGraph's
 official MongoDB checkpointer, keyed by thread_id (one per admin).
 FastAPI itself never queries the app's collections — only the checkpoint DB.
 """
 
+import asyncio
 import os
 import base64
 import json
@@ -25,14 +26,20 @@ load_dotenv()
 from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from pymongo import MongoClient
 from langgraph.checkpoint.mongodb import MongoDBSaver
 
 from agent import build_agent
-from prompts import get_welcome
-from suggestions import get_suggestions
+from rag import initialize_rag
+from client.express import ExpressClient
+from memory import store_memory, retrieve_memories
+from memory import extract_events
+from content.prompts import get_welcome
+from content.suggestions import get_suggestions
 
 MONGODB_URI = os.environ["MONGODB_URI"]
 CHECKPOINT_DB = os.environ.get("CHECKPOINT_DB", "agent_memory")
+MEMORY_COLLECTION = os.environ.get("MEMORY_COLLECTION", "agent_memories")
 
 # Holds the live checkpointer for the app's lifetime.
 state = {}
@@ -40,9 +47,6 @@ state = {}
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # MongoDBSaver.from_conn_string is a SYNC context manager that connects
-    # immediately (it creates indexes), so MongoDB must be reachable at startup.
-    # It exposes async methods (aput/aget_tuple/...) that agent.ainvoke uses.
     with ExitStack() as stack:
         try:
             checkpointer = stack.enter_context(
@@ -58,7 +62,17 @@ async def lifespan(app: FastAPI):
                 f"Kiểm tra MONGODB_URI và (nếu dùng Atlas) whitelist IP server. Chi tiết: {e}"
             ) from e
         state["checkpointer"] = checkpointer
+
+        mongo_client = MongoClient(MONGODB_URI, serverSelectionTimeoutMS=5000)
+        state["memory_collection"] = mongo_client[CHECKPOINT_DB][MEMORY_COLLECTION]
+
+        try:
+            await initialize_rag()
+        except Exception as e:
+            print(f"[RAG] Warning: khởi tạo thất bại, retrieve_knowledge sẽ không hoạt động: {e}")
         yield
+
+        mongo_client.close()
     state.clear()
 
 
@@ -74,6 +88,7 @@ app.add_middleware(
 class ChatIn(BaseModel):
     message: str
     thread_id: Optional[str] = None
+    refresh_token: Optional[str] = None
 
 
 class ChatOut(BaseModel):
@@ -82,9 +97,9 @@ class ChatOut(BaseModel):
     data: Optional[dict] = None
 
 
-def _extract_jwt(authorization: Optional[str]) -> str:
+def _extract_access_token(authorization: Optional[str]) -> str:
     if not authorization or not authorization.lower().startswith("bearer "):
-        raise HTTPException(401, "Missing admin JWT")
+        raise HTTPException(401, "Missing access token")
     return authorization.split(" ", 1)[1]
 
 
@@ -94,14 +109,24 @@ def _extract_language(accept_language: Optional[str]) -> str:
     return "vi"
 
 
-def _decode_jwt_username(token: str) -> str:
+def _decode_username(access_token: str) -> str:
     try:
-        payload_b64 = token.split(".")[1]
+        payload_b64 = access_token.split(".")[1]
         payload_b64 += "=" * (4 - len(payload_b64) % 4)
         payload = json.loads(base64.b64decode(payload_b64))
         return payload.get("username", "Admin")
     except Exception:
         return "Admin"
+
+
+def _decode_admin_id(access_token: str) -> str:
+    try:
+        payload_b64 = access_token.split(".")[1]
+        payload_b64 += "=" * (4 - len(payload_b64) % 4)
+        payload = json.loads(base64.b64decode(payload_b64))
+        return str(payload.get("id") or payload.get("_id") or access_token[-24:])
+    except Exception:
+        return access_token[-24:]
 
 
 @app.get("/health")
@@ -114,8 +139,8 @@ async def welcome(
     authorization: Optional[str] = Header(default=None),
     accept_language: Optional[str] = Header(default=None),
 ):
-    jwt = _extract_jwt(authorization)
-    username = _decode_jwt_username(jwt)
+    access_token = _extract_access_token(authorization)
+    username = _decode_username(access_token)
     language = _extract_language(accept_language)
     return ChatOut(data={"reply": get_welcome(username, language)})
 
@@ -123,7 +148,7 @@ async def welcome(
 @app.post("/agent/reset")
 async def reset_thread(authorization: Optional[str] = Header(default=None)):
     """Tạo thread_id mới để bắt đầu cuộc hội thoại mới, xóa bỏ flow cũ."""
-    _extract_jwt(authorization)
+    _extract_access_token(authorization)
     return ChatOut(data={"thread_id": str(uuid.uuid4())})
 
 
@@ -140,13 +165,50 @@ async def agent_chat(
     authorization: Optional[str] = Header(default=None),
     accept_language: Optional[str] = Header(default=None),
 ):
-    jwt = _extract_jwt(authorization)
-    thread_id = req.thread_id or jwt[-24:]
-
+    access_token = _extract_access_token(authorization)
+    thread_id = req.thread_id or access_token[-24:]
+    admin_id = _decode_admin_id(access_token)
     language = _extract_language(accept_language)
-    agent = build_agent(jwt, state["checkpointer"], language)
+    memory_col = state["memory_collection"]
+
+    # RETRIEVE: tìm memories liên quan, inject vào system prompt
+    memory_context = ""
+    try:
+        memories = await asyncio.to_thread(
+            retrieve_memories, memory_col, admin_id, req.message
+        )
+        if memories:
+            memory_context = "\n".join(f"- {m}" for m in memories)
+    except Exception as e:
+        print(f"[Memory] retrieve error: {e}")
+
+    client = ExpressClient(access_token, req.refresh_token)
+    agent = build_agent(client, state["checkpointer"], language, memory_context)
     config = {"configurable": {"thread_id": thread_id}}
 
     result = await agent.ainvoke({"messages": [("user", req.message)]}, config)
     reply = result["messages"][-1].content
-    return ChatOut(data={"reply": reply, "thread_id": thread_id})
+
+    # STORE: lưu events thành công vào vector DB (fire and forget)
+    events = extract_events(result["messages"])
+    if events:
+        async def _store_events():
+            for ev in events:
+                try:
+                    await asyncio.to_thread(
+                        store_memory,
+                        memory_col,
+                        admin_id,
+                        ev["event_type"],
+                        ev["text"],
+                        ev["metadata"],
+                    )
+                except Exception as e:
+                    print(f"[Memory] store error: {e}")
+        asyncio.create_task(_store_events())
+
+    response_data: dict = {"reply": reply, "thread_id": thread_id}
+    if client.new_tokens:
+        response_data["new_tokens"] = client.new_tokens
+
+    return ChatOut(data=response_data)

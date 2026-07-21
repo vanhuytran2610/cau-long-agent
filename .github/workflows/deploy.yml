@@ -1,0 +1,43 @@
+name: Deploy Agent
+
+on:
+  push:
+    branches: [master, main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Syntax check
+        run: python -m compileall . -q --exclude .venv
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DROPLET_HOST }}
+          username: ${{ secrets.DROPLET_USER }}
+          key: ${{ secrets.DROPLET_SSH_KEY }}
+          script: |
+            set -e
+            cd ~/cau-long-agent
+
+            git fetch origin
+            git reset --hard origin/master
+
+            source .venv/bin/activate
+            pip install -r requirements.txt --quiet
+
+            sudo systemctl restart cau-long-agent
+            sleep 4
+
+            curl -sf http://localhost:8000/health || (journalctl -u cau-long-agent -n 30 --no-pager && exit 1)
+            echo "Deploy OK"

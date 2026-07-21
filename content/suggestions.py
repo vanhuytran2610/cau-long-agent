@@ -2,7 +2,7 @@
 Suggestion chips shown to the admin as tappable buttons.
 
 Each entry maps a short button label -> a sample command the frontend sends
-to POST /agent when tapped. Keep this list in sync with the tools in agent.py;
+to POST /agent when tapped. Keep this list in sync with the tools in agent/;
 it's the user-facing menu of what the agent can do.
 
 `prompt` is what gets sent as the chat message. For write actions the agent
