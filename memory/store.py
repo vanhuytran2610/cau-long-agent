@@ -3,7 +3,11 @@ from datetime import datetime, timezone
 
 from openai import OpenAI
 
-_openai_client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY", ""))
+_openai_client = OpenAI(
+    api_key=os.environ.get("XAI_API_KEY", ""),
+    base_url="https://api.x.ai/v1",
+)
+
 
 SCORE_THRESHOLD = float(os.environ.get("MEMORY_SCORE_THRESHOLD", "0.75"))
 TOP_K = int(os.environ.get("MEMORY_TOP_K", "5"))
@@ -12,7 +16,7 @@ VECTOR_INDEX_NAME = "vector_index"
 
 def embed_text(text: str) -> list[float]:
     res = _openai_client.embeddings.create(
-        model="text-embedding-3-small",
+        model="v1",
         input=text,
     )
     return res.data[0].embedding
