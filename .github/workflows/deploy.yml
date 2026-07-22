@@ -38,7 +38,7 @@ jobs:
             pip install -r requirements.txt --quiet
 
             sudo systemctl restart cau-long-agent
-            sleep 4
+            sleep 15
 
             curl -sf http://localhost:8000/health || (journalctl -u cau-long-agent -n 30 --no-pager && exit 1)
             echo "Deploy OK"
