@@ -18,7 +18,7 @@ jobs:
           python-version: "3.11"
 
       - name: Syntax check
-        run: python -m compileall . -q --exclude .venv
+        run: python -m compileall . -q -x '\.venv|venv'
 
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.2.0
@@ -33,7 +33,7 @@ jobs:
             git fetch origin
             git reset --hard origin/master
 
-            source venv/bin/activate
+            source .venv/bin/activate
             pip install -r requirements.txt --quiet
 
             sudo systemctl restart cau-long-agent
