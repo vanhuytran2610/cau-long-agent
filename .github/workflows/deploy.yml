@@ -26,6 +26,7 @@ jobs:
           host: ${{ secrets.DROPLET_HOST }}
           username: ${{ secrets.DROPLET_USER }}
           key: ${{ secrets.DROPLET_SSH_KEY }}
+          command_timeout: 10m
           script: |
             set -e
             cd ~/cau-long-agent
